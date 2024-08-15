@@ -1,5 +1,5 @@
 import { dlopen, FFIType, ptr } from "bun:ffi";
-import { Webview } from "./webview";
+import Webview from "./lib/Webview";
 
 export function encodeCString(value: string) {
     return ptr(new TextEncoder().encode(value + "\0"));
