@@ -1,5 +1,5 @@
 import { dlopen, FFIType, ptr } from "bun:ffi";
-import Webview from "./lib/Webview";
+import { Webview } from "./webview";
 
 export function encodeCString(value: string) {
     return ptr(new TextEncoder().encode(value + "\0"));
@@ -16,27 +16,50 @@ export function unload() {
     lib.close();
 }
 
-let lib_file;
+const lib_file = (await getLibFile()).default;
 
-if (process.platform === "win32") {
-    //@ts-expect-error
-    lib_file = await import("../build/libwebview.dll");
-} else if (process.platform === "linux" && process.arch === "x64") {
-    //@ts-expect-error
-    lib_file = await import("../build/libwebview.so");
-} else if (process.platform === "darwin") {
-    if (process.arch === "x64") {
-        //@ts-expect-error
-        lib_file = await import("../build/libwebview.x64.dylib");
-    } else {
-        //@ts-expect-error
-        lib_file = await import("../build/libwebview.arm64.dylib");
-    }
-} else {
-    throw `unsupported platform: ${process.platform}-${process.arch}`;
+/**
+ * It determines the appropriate lib file for the given platform and environment.
+ *
+ * A `string` file location is the technically requirement, however to
+ * trigger bun to bundle the lib files as external resources, `import` is
+ * called here, which also returns the `default` string property for the path.
+ *
+ * If `process.env.WEBVIEW_PATH` is preferred, listing the default lib (absolute)
+ * file paths in `Bun.build({ external: []}` will exclude them. Be sure to
+ * manually include your custom lib file in your distribution bundle.
+ */
+function getLibFile(): Promise<{ default: string }> {
+	if (!!process.env.WEBVIEW_PATH) {
+		return Promise.resolve().then(() => ({
+			default: process.env.WEBVIEW_PATH!,
+		}));
+	}
+
+	const { platform, arch } = process;
+
+	if (platform === "win32") {
+		//@ts-expect-error
+		return import("../build/libwebview.dll");
+	}
+	if (platform === "linux" && arch === "x64") {
+		//@ts-expect-error
+		return import("../build/libwebview.so");
+	}
+	if (platform === "darwin" && (arch === "x64" || arch === "arm64")) {
+		switch (arch) {
+			case "x64":
+				//@ts-expect-error
+				return import("../build/libwebview.x64.dylib");
+			case "arm64":
+				//@ts-expect-error
+				return import("../build/libwebview.arm64.dylib");
+		}
+	}
+	throw `unsupported platform: ${process.platform}-${process.arch}`;
 }
 
-export const lib = dlopen(process.env.WEBVIEW_PATH ?? lib_file.default, {
+export const lib = dlopen(lib_file, {
     webview_create: {
         args: [FFIType.i32, FFIType.ptr],
         returns: FFIType.ptr
@@ -94,3 +117,4 @@ export const lib = dlopen(process.env.WEBVIEW_PATH ?? lib_file.default, {
         returns: FFIType.void
     }
 });
+
